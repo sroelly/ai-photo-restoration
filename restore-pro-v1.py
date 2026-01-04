@@ -376,4 +376,44 @@ async def main():
         print(f"Load Balancing: {Colors.GREEN}Active{Colors.RESET}")
         print(f"Folder Structure: {Colors.GREEN}Recursive Mirroring{Colors.RESET}")
     except ValueError as e:
-        print(f"{Colors
+        print(f"{Colors.RED}Error: {e}{Colors.RESET}")
+        return
+
+    in_path = Path(args.input)
+    out_path = Path(args.output)
+    
+    # Recursive search for images
+    exts = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp", ".heic"}
+    files = [f for f in in_path.rglob("*") if f.suffix.lower() in exts and f.is_file()]
+    
+    if not files:
+        print(f"No images found in {args.input} (scanned recursively).")
+        return
+
+    print(f"{Colors.HEADER}--- START: {len(files)} Images (Recursive) ---{Colors.RESET}")
+    print(f"Mode: {args.mode} | Resolution: {args.resolution}")
+    
+    stats = { "success": 0, "skip": 0, "error": 0, "failed_files": [] }
+    sem = asyncio.Semaphore(args.parallel)
+    tasks = []
+    
+    for f in files:
+        # Pass input_base_path (in_path) to calculate relative structure
+        task = asyncio.create_task(process_image_smart(sem, key_manager, f, out_path, in_path, args.mode, args, stats))
+        tasks.append(task)
+        if args.start_delay > 0: await asyncio.sleep(args.start_delay)
+    
+    await tqdm.gather(*tasks, desc="Processing", unit="img")
+
+    print(f"\n{Colors.HEADER}STATISTICS{Colors.RESET}")
+    print(f"✅ Success: {stats['success']}")
+    print(f"⏩ Skipped: {stats['skip']}")
+    print(f"❌ Failed:  {stats['error']}")
+    if stats["failed_files"]:
+        print(f"\n{Colors.YELLOW}⚠️  FAILED FILES:{Colors.RESET}")
+        for fail in stats["failed_files"]: print(f"   - {fail}")
+
+if __name__ == "__main__":
+    if os.name == 'nt': asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    try: asyncio.run(main())
+    except KeyboardInterrupt: print(f"\n{Colors.RED}Aborted by user.{Colors.RESET}")
