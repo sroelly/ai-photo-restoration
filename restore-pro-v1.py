@@ -6,6 +6,7 @@ import asyncio
 import argparse
 import numpy as np
 import piexif
+from datetime import datetime  # ADDED: For timestamps
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 from dotenv import load_dotenv
@@ -104,6 +105,42 @@ logging.basicConfig(
 logging.getLogger("google").setLevel(logging.WARNING)
 logging.getLogger("urllib3").setLevel(logging.WARNING)
 
+# ================= HELPER FUNCTIONS =================
+
+def get_timestamp():
+    """Returns current time as string [HH:MM:SS]"""
+    return datetime.now().strftime("[%H:%M:%S]")
+
+def load_api_keys():
+    """Loads MULTIPLE API keys from .env file (comma separated)."""
+    load_dotenv()
+    keys_str = os.getenv("GOOGLE_API_KEY")
+    if not keys_str: raise ValueError("NO API KEY FOUND! Please check .env file.")
+    
+    # Split by comma, strip whitespace
+    keys = [k.strip() for k in keys_str.split(',') if k.strip()]
+    if not keys: raise ValueError("NO VALID API KEYS FOUND!")
+    return keys
+
+def is_image_bw(pil_img, threshold=BW_THRESHOLD):
+    """Checks if an image is Black & White based on saturation."""
+    img_small = pil_img.resize((100, 100)).convert("HSV")
+    score = (np.mean(np.array(img_small)[:, :, 1]) / 255.0) * 100
+    return score < threshold
+
+def sanitize_exif(original_path, new_size):
+    """Copies EXIF data, removes thumbnails, updates dimensions."""
+    try:
+        exif_dict = piexif.load(original_path)
+        if "thumbnail" in exif_dict: del exif_dict["thumbnail"]
+        if "0th" in exif_dict:
+            exif_dict["0th"][piexif.ImageIFD.ImageWidth] = new_size[0]
+            exif_dict["0th"][piexif.ImageIFD.ImageLength] = new_size[1]
+        if "Exif" in exif_dict:
+            exif_dict["Exif"][piexif.ImageIFD.PixelXDimension] = new_size[0]
+            exif_dict["Exif"][piexif.ImageIFD.PixelYDimension] = new_size[1]
+        return piexif.dump(exif_dict)
+    except Exception: return None
 
 # ================= INTELLIGENT KEY MANAGER =================
 class KeyManager:
@@ -137,43 +174,11 @@ class KeyManager:
             for i, c_data in enumerate(self.clients):
                 if c_data["client"] == client_obj:
                     k_mask = c_data["key_mask"]
-                    tqdm.write(f"{Colors.RED}💀 Key {k_mask} is depleted (Quota). Removing it!{Colors.RESET}")
+                    # TIMESTAMP ADDED HERE
+                    tqdm.write(f"{get_timestamp()} {Colors.RED}💀 Key {k_mask} is depleted (Quota). Removing it!{Colors.RESET}")
                     logging.warning(f"Key {k_mask} removed due to Quota limit.")
                     self.clients.pop(i)
                     return
-
-# ================= HELPER FUNCTIONS =================
-
-def load_api_keys():
-    """Loads MULTIPLE API keys from .env file (comma separated)."""
-    load_dotenv()
-    keys_str = os.getenv("GOOGLE_API_KEY")
-    if not keys_str: raise ValueError("NO API KEY FOUND! Please check .env file.")
-    
-    # Split by comma, strip whitespace
-    keys = [k.strip() for k in keys_str.split(',') if k.strip()]
-    if not keys: raise ValueError("NO VALID API KEYS FOUND!")
-    return keys
-
-def is_image_bw(pil_img, threshold=BW_THRESHOLD):
-    """Checks if an image is Black & White based on saturation."""
-    img_small = pil_img.resize((100, 100)).convert("HSV")
-    score = (np.mean(np.array(img_small)[:, :, 1]) / 255.0) * 100
-    return score < threshold
-
-def sanitize_exif(original_path, new_size):
-    """Copies EXIF data, removes thumbnails, updates dimensions."""
-    try:
-        exif_dict = piexif.load(original_path)
-        if "thumbnail" in exif_dict: del exif_dict["thumbnail"]
-        if "0th" in exif_dict:
-            exif_dict["0th"][piexif.ImageIFD.ImageWidth] = new_size[0]
-            exif_dict["0th"][piexif.ImageIFD.ImageLength] = new_size[1]
-        if "Exif" in exif_dict:
-            exif_dict["Exif"][piexif.ImageIFD.PixelXDimension] = new_size[0]
-            exif_dict["Exif"][piexif.ImageIFD.PixelYDimension] = new_size[1]
-        return piexif.dump(exif_dict)
-    except Exception: return None
 
 # ================= API CALL (Basis) =================
 
@@ -221,7 +226,8 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                 jobs = [current_mode]
                 if args.auto_colorize_bw and ((mode == "AUTO" and is_bw) or (mode == "RESTORE_BW")):
                     jobs.append("RESTORE_BW_COLORIZE")
-                    tqdm.write(f"{Colors.CYAN}✨ Dual-Mode: {filename}{Colors.RESET}")
+                    # TIMESTAMP ADDED
+                    tqdm.write(f"{get_timestamp()} {Colors.CYAN}✨ Dual-Mode: {filename}{Colors.RESET}")
 
                 for job_mode in jobs:
                     # --- RECURSIVE FOLDER MIRRORING ---
@@ -263,7 +269,8 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                                 img.convert("RGB").save(img_byte_arr, format=UPLOAD_FORMAT_FALLBACK, quality=UPLOAD_JPEG_QUALITY)
                                 mime_type = f"image/{UPLOAD_FORMAT_FALLBACK.lower()}"
                                 if attempt_counter == RETRIES_BEFORE_FALLBACK:
-                                    tqdm.write(f"{Colors.BLUE}Info: {filename} switching to JPEG (stability){Colors.RESET}")
+                                    # TIMESTAMP ADDED
+                                    tqdm.write(f"{get_timestamp()} {Colors.BLUE}Info: {filename} switching to JPEG (stability){Colors.RESET}")
 
                             # 3. Attempt API Call
                             response = await try_generate(
@@ -322,7 +329,8 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                             
                             # === FATAL: ALL KEYS GONE ===
                             elif "ALL_KEYS_EXHAUSTED" in error_msg:
-                                tqdm.write(f"{Colors.RED}❌ NO KEYS LEFT! Aborting: {filename}{Colors.RESET}")
+                                # TIMESTAMP ADDED
+                                tqdm.write(f"{get_timestamp()} {Colors.RED}❌ NO KEYS LEFT! Aborting: {filename}{Colors.RESET}")
                                 stats["error"] += 1
                                 stats["failed_files"].append(f"{filename} (No Keys left)")
                                 return # Give up completely
@@ -333,24 +341,27 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                                 wait_time = 2 ** attempt_counter
                                 
                                 if attempt_counter > MAX_RETRIES_PER_KEY:
-                                    tqdm.write(f"{Colors.RED}❌ {filename}: Too many errors. Giving up.{Colors.RESET}")
+                                    # TIMESTAMP ADDED
+                                    tqdm.write(f"{get_timestamp()} {Colors.RED}❌ {filename}: Too many errors. Giving up.{Colors.RESET}")
                                     stats["error"] += 1
                                     stats["failed_files"].append(f"{filename} (Tech Error)")
                                     return
                                 else:
                                     msg = "Server Error 503" if ("503" in error_msg or "Deadline" in error_msg) else str(e)
-                                    tqdm.write(f"{Colors.YELLOW}⚠️  {filename}: {msg}. Waiting {wait_time}s.{Colors.RESET}")
+                                    # TIMESTAMP ADDED
+                                    tqdm.write(f"{get_timestamp()} {Colors.YELLOW}⚠️  {filename}: {msg}. Waiting {wait_time}s.{Colors.RESET}")
                                     await asyncio.sleep(wait_time)
 
         except Exception as e:
             msg = f"System error at {filename}: {e}"
             logging.error(msg)
-            tqdm.write(f"{Colors.RED}❌ {msg}{Colors.RESET}")
+            # TIMESTAMP ADDED
+            tqdm.write(f"{get_timestamp()} {Colors.RED}❌ {msg}{Colors.RESET}")
             stats["error"] += 1
             stats["failed_files"].append(f"{filename} (System Error)")
 
 async def main():
-    parser = argparse.ArgumentParser(description="AI Photo Restoration V8 (Recursive Mirror)")
+    parser = argparse.ArgumentParser(description="AI Photo Restoration V9 (Timekeeper)")
     parser.add_argument("--input", default=DEFAULT_INPUT_FOLDER, help="Input folder")
     parser.add_argument("--output", default=DEFAULT_OUTPUT_FOLDER, help="Output folder")
     parser.add_argument("--mode", default=DEFAULT_MODE, help="Mode")
@@ -371,7 +382,7 @@ async def main():
     try:
         api_keys = load_api_keys()
         key_manager = KeyManager(api_keys)
-        print(f"{Colors.HEADER}--- API SETUP (Smart Hybrid V8) ---{Colors.RESET}")
+        print(f"{Colors.HEADER}--- API SETUP (Smart Hybrid V9) ---{Colors.RESET}")
         print(f"Found Keys: {len(api_keys)}")
         print(f"Load Balancing: {Colors.GREEN}Active{Colors.RESET}")
         print(f"Folder Structure: {Colors.GREEN}Recursive Mirroring{Colors.RESET}")
