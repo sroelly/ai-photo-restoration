@@ -1,0 +1,152 @@
+# 📸 AI Photo Restoration Pro (V8)
+
+**Turn your old analog slides and photos into crisp 4K digital memories using Google Gemini AI.**
+
+This tool automates the restoration process. It removes dust, scratches, and mold, corrects color casts, and sharpens details—all while preserving the original identity of the image.
+
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue) ![License](https://img.shields.io/badge/License-MIT-green)
+
+---
+
+## ✨ Key Features (V8)
+
+* **🧠 Hybrid AI Logic:** Automatically detects if an image is Black & White or Color and applies the correct restoration prompt.
+* **📂 Recursive Mirroring:** You can drop entire folder structures (e.g., `1980/Summer/Beach`) into the input. The script recreates the exact same structure in the output folder.
+* **⚖️ Smart Load Balancer:** Supports **multiple API Keys**. If one key hits the daily limit (Quota Exceeded), the script automatically switches to the next one without stopping.
+* **🛡️ Auto-Stabilization:** Starts uploading in high-quality PNG. If the server is busy, it automatically falls back to compressed JPEG to ensure the image gets processed.
+* **🎨 Dual Mode:** Can restore a Black & White photo AND generate a colorized version in one go.
+
+---
+
+## 🛠️ Prerequisites (Before you start)
+
+You need a **Google Gemini API Key** (it's free).
+
+1.  Go to [Google AI Studio](https://aistudio.google.com/app/apikey).
+2.  Click **"Create API key"**.
+3.  Copy the key string (starts with `AIza...`).
+
+### Setting up the Keys
+1.  Create a file named `.env` in the script folder (no `.txt` extension!).
+2.  Open it with a text editor (Notepad, TextEdit).
+3.  Paste your key like this:
+    ```env
+    GOOGLE_API_KEY=AIzaYourKeyHere...
+    ```
+    **Pro Tip:** To use the Load Balancer, add multiple keys separated by a comma (no spaces):
+    ```env
+    GOOGLE_API_KEY=Key1,Key2,Key3
+    ```
+
+---
+
+## 📦 Installation
+
+### 🪟 Windows
+1.  **Install Python:** Download from [python.org](https://www.python.org/downloads/).
+    * ⚠️ **IMPORTANT:** During installation, check the box **"Add Python to PATH"**.
+2.  **Install Libraries:**
+    * Open Command Prompt (Win+R, type `cmd`, Enter).
+    * Run this command:
+        ```cmd
+        pip install -r requirements.txt
+        ```
+
+### 🍎 macOS
+1.  **Install Python:** Download from [python.org](https://www.python.org/downloads/).
+    * *Note:* Go to your Applications folder -> Python 3.x -> double click `Install Certificates.command`.
+2.  **Setup Environment:**
+    * Open Terminal.
+    * Navigate to the folder: `cd /path/to/your/folder` (Tip: Type `cd ` and drag the folder into the terminal).
+    * Create a virtual environment (to avoid system errors):
+        ```bash
+        python3 -m venv venv
+        source venv/bin/activate
+        ```
+    * Install libraries:
+        ```bash
+        pip install -r requirements.txt
+        ```
+
+---
+
+## 🚀 How to Use
+
+1.  Place your images in the folder **`input_images`**. You can organize them in subfolders!
+2.  Run the script:
+
+**Windows:**
+```cmd
+python restore_pro.py
+
+**macOS:**
+
+Bash
+source venv/bin/activate
+python restore_pro.py
+
+The restored images will appear in restored_images, maintaining your original folder structure.
+
+
+---
+
+## 🎛️ Cheat Sheet: Command Line Options
+You can customize the script behavior by adding "flags" to the start command.
+
+Example: python restore_pro.py --resolution 2K --parallel 1
+
+Option							Default								Description
+--input							./input_images					Source folder containing original photos.
+--output						./restored_images			Destination folder for results.
+--resolution					4K									"Output quality. Options: 4K (Ultra), 2K (Stable/Faster)."
+--mode							AUTO								AUTO: Detects BW/Color.RESTORE_COLOR: Forces color restoration.RESTORE_BW: Forces Black & White.COLOR_TO_BW: Converts color to artistic BW.
+--parallel						4										How many images to upload at once.1 = Safe & slow.4 = Fast (requires good internet).
+--start_delay				1.0									Waiting time (seconds) between uploads to avoid spamming the server.
+--auto_colorize_bw		True									"If True, creates TWO versions of B&W photos: one restored B&W, one colorized."
+--force							False								Reprocess images even if they already exist in the output folder.
+--format						PNG									Output file format (PNG or JPEG).
+
+
+---
+
+## 📂 Folder Structure Example
+Because of the Recursive Mirroring (V8), you can organize your input however you like.
+
+Input:
+input_images/
+├── 1980_Summer/
+│   ├── Beach.jpg
+│   └── Mountain.jpg
+└── Family/
+    └── Christmas_1990/
+        └── Dad.jpg
+        
+Output (created automatically):
+restored_images/
+├── 1980_Summer/
+│   ├── Beach_restored.png
+│   └── Mountain_restored.png
+└── Family/
+    └── Christmas_1990/
+        └── Dad_restored.png
+
+
+---
+
+##❓ Troubleshooting
+Error: 429 Quota Exceeded
+- Cause: You processed too many images today (Free tier limit).
+- Solution: The script will automatically ban this key and try the next one if you provided multiple keys in .env. If all keys are empty, you must wait 24h.
+
+Error: 503 Service Unavailable or Deadline Exceeded
+- Cause: Google servers are busy or the image is too complex for 4K.
+- Solution: The script automatically retries and switches to JPEG format to stabilize the upload. Just wait.
+
+"Content Blocked" / Safety Filter
+- Cause: Google's AI Safety Filter triggered (e.g., skin exposure, even on baby photos).
+- Solution: Cannot be bypassed. The script will skip this file and log it.
+
+---
+
+## 📜 License
+This project is open-source. Feel free to modify and share!

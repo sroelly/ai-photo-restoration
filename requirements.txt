@@ -1,0 +1,6 @@
+google-genai
+pillow
+tqdm
+python-dotenv
+piexif
+numpy
