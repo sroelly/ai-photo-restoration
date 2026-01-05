@@ -242,7 +242,7 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                     out_filename = f"{args.prefix}{file_path.stem}{suffix}.{args.format.lower()}"
                     out_path = target_folder / out_filename
                     
-                    # Smart Skip
+                    # Smart Skip (Existing Files)
                     if args.skip_existing and out_path.exists() and not args.force:
                         if abs(file_path.stat().st_mtime - out_path.stat().st_mtime) < 1.0:
                             stats["skip"] += 1
@@ -326,12 +326,12 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                                     logging.warning(msg)
                                     stats["error"] += 1
                                     stats["failed_files"].append(f"{filename} (Safety Block)")
-                                    success = True # ABORT
+                                    success = True # ABORT: Do not retry
                             else:
                                 raise Exception("Empty API Response")
 
                         except Exception as e:
-                            error_msg = str(e)
+                            error_msg = str(e).lower()
                             
                             # === CRITICAL: QUOTA HANDLING (429) ===
                             if "429" in error_msg:
@@ -339,8 +339,19 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                                 await key_manager.ban_current_key(client)
                                 continue # 'continue' restarts the while loop -> gets new key
                             
+                            # === NEW: EXPLICIT SAFETY EXCEPTION HANDLING ===
+                            elif "blocked" in error_msg or "safety" in error_msg or "400" in error_msg:
+                                # Sometimes Google throws 400 or "User content blocked" as an Exception
+                                msg = f"🛡️ Content Blocked (Exception) for {filename}"
+                                tqdm.write(f"{get_timestamp()} {Colors.YELLOW}{msg}{Colors.RESET}")
+                                logging.warning(f"{msg} - {error_msg}")
+                                stats["error"] += 1
+                                stats["failed_files"].append(f"{filename} (Safety/Blocked)")
+                                success = True # ABORT: Do not retry!
+                                break
+
                             # === FATAL: ALL KEYS GONE ===
-                            elif "ALL_KEYS_EXHAUSTED" in error_msg:
+                            elif "all_keys_exhausted" in error_msg:
                                 tqdm.write(f"{get_timestamp()} {Colors.RED}❌ NO KEYS LEFT! Aborting: {filename}{Colors.RESET}")
                                 stats["error"] += 1
                                 stats["failed_files"].append(f"{filename} (No Keys left)")
@@ -357,7 +368,7 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
                                     stats["failed_files"].append(f"{filename} (Tech Error)")
                                     return
                                 else:
-                                    msg = "Server Error 503" if ("503" in error_msg or "Deadline" in error_msg) else str(e)
+                                    msg = "Server Error 503" if ("503" in error_msg or "deadline" in error_msg) else str(e)
                                     tqdm.write(f"{get_timestamp()} {Colors.YELLOW}⚠️  {filename}: {msg}. Waiting {wait_time}s.{Colors.RESET}")
                                     await asyncio.sleep(wait_time)
 
@@ -369,7 +380,7 @@ async def process_image_smart(sem, key_manager, file_path, output_dir, input_bas
             stats["failed_files"].append(f"{filename} (System Error)")
 
 async def main():
-    parser = argparse.ArgumentParser(description="AI Photo Restoration V11 (Platinum Edition)")
+    parser = argparse.ArgumentParser(description="AI Photo Restoration V12 (Smart Filter Edition)")
     parser.add_argument("--input", default=DEFAULT_INPUT_FOLDER, help="Input folder")
     parser.add_argument("--output", default=DEFAULT_OUTPUT_FOLDER, help="Output folder")
     parser.add_argument("--mode", default=DEFAULT_MODE, help="Mode")
@@ -390,11 +401,12 @@ async def main():
     try:
         api_keys = load_api_keys()
         key_manager = KeyManager(api_keys)
-        print(f"{Colors.HEADER}--- API SETUP (Platinum V11) ---{Colors.RESET}")
+        print(f"{Colors.HEADER}--- API SETUP (Smart Hybrid V12) ---{Colors.RESET}")
         print(f"Found Keys: {len(api_keys)}")
         print(f"Load Balancing: {Colors.GREEN}Active{Colors.RESET}")
         print(f"Folder Structure: {Colors.GREEN}Recursive Mirroring{Colors.RESET}")
-        print(f"Safety Shield: {Colors.GREEN}Active{Colors.RESET}")
+        print(f"Safety Shield: {Colors.GREEN}Active (No Retries on Block){Colors.RESET}")
+        print(f"Input Filter: {Colors.GREEN}Smart (Ignores restored files){Colors.RESET}")
     except ValueError as e:
         print(f"{Colors.RED}Error: {e}{Colors.RESET}")
         return
@@ -402,12 +414,23 @@ async def main():
     in_path = Path(args.input)
     out_path = Path(args.output)
     
-    # Recursive search for images
+    # --- NEW: FILTER LOGIC TO IGNORE RESTORED FILES ---
+    forbidden_suffixes = list(SUFFIX_MAP.values()) # ['_restored', '_restored_bw', ...]
+
+    def is_already_restored(path):
+        stem = path.stem.lower()
+        return any(stem.endswith(s) for s in forbidden_suffixes)
+
+    # Recursive search with filter
     exts = {".jpg", ".jpeg", ".png", ".tif", ".tiff", ".bmp", ".webp", ".heic"}
-    files = [f for f in in_path.rglob("*") if f.suffix.lower() in exts and f.is_file()]
+    files = [f for f in in_path.rglob("*") 
+             if f.suffix.lower() in exts 
+             and f.is_file() 
+             and not is_already_restored(f)] # The Filter
     
     if not files:
-        print(f"No images found in {args.input} (scanned recursively).")
+        print(f"No valid images found in {args.input} (scanned recursively).")
+        print("Note: Files ending in '_restored' etc. are automatically ignored.")
         return
 
     print(f"{Colors.HEADER}--- START: {len(files)} Images (Recursive) ---{Colors.RESET}")
